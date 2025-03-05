@@ -74,7 +74,8 @@ def download_playlist(url, resolution, download_path):
 # Streamlit UI
 def main():
     # Streamlit setup
-    st.title("YouTube Playlist Downloader")
+    st.title("YouTube Video/Playlist Downloader")
+    st.warning("NOTE:Works For Laptop/Pc Only")
 
     # Input for YouTube playlist URL
     playlist_url = st.text_input("Enter YouTube Video/Playlist URL:")
