@@ -9,32 +9,20 @@ default_download_path = os.path.join(os.path.expanduser("~"), "Downloads")
 def download_playlist(url, resolution, download_path):
     # Progress hook to track download progress
     def progress_hook(d):
-        # Ensure that download_bytes and speed are not None
         downloaded_bytes = d.get('downloaded_bytes', 0)
         total_bytes = d.get('total_bytes', 0)
         speed = d.get('speed', 0)
 
         if d['status'] == 'downloading':
-            # Handle None and ensure the calculations don't fail
-            if total_bytes > 0:
-                percentage = (downloaded_bytes / total_bytes) * 100
-            else:
-                percentage = 0  # Avoid division by zero
-
-            # Update progress bar and display current status
-            st.session_state.progress_bar.progress(percentage / 100)  # Set the progress bar
+            percentage = (downloaded_bytes / total_bytes) * 100 if total_bytes > 0 else 0
+            st.session_state.progress_bar.progress(percentage / 100)
             st.session_state.progress_text.text(f"Downloaded: {percentage:.2f}%")
-
-            # Show download speed and size
             st.session_state.speed_text.text(f"Speed: {format_speed(speed)}")
             st.session_state.size_text.text(f"Downloaded: {format_size(downloaded_bytes)} / Total Size: {format_size(total_bytes)}")
-
         elif d['status'] == 'finished':
-            # When the download finishes
-            st.session_state.progress_bar.progress(1)  # Set the progress bar to 100%
-            st.session_state.progress_text.text(f"Download complete!")
+            st.session_state.progress_bar.progress(1)
+            st.session_state.progress_text.text("Download complete!")
 
-    # Format the speed in a human-readable way
     def format_speed(speed):
         if speed is None:
             return "Unknown"
@@ -45,7 +33,6 @@ def download_playlist(url, resolution, download_path):
         else:
             return f"{speed / 1024**2:.2f} MB/s"
 
-    # Format the size in a human-readable way
     def format_size(size):
         if size is None:
             return "Unknown"
@@ -58,74 +45,97 @@ def download_playlist(url, resolution, download_path):
         else:
             return f"{size / 1024**3:.2f} GB"
 
-    # Download options
+    # Download options.
+    # When not in a playlist, %(playlist)s becomes "NA"
     ydl_opts = {
-        "default_search": "ytsearch",
-        "format": "bv+ba/b",  # Ensure both video and audio are selected
-        "merge_output_format": "mp4",  # Force MP4 merging
+        "format": "bv+ba/b",  # Download best video and best audio
+        "merge_output_format": "mp4",  # Merge into MP4
         "outtmpl": os.path.join(download_path, "%(playlist)s/%(playlist_index)s - %(title)s.%(ext)s"),
         "noplaylist": False,  # Allow playlist downloading
-        "retries": 10,  # Retry up to 10 times for failed downloads
-        "fragment_retries": 10,  # Retry failed video fragments
-        "continue": True,  # Resume interrupted downloads
-        "ignoreerrors": True,  # Skip failed videos instead of stopping
-        "progress_hooks": [progress_hook],  # Track download progress
+        "retries": 10,
+        "fragment_retries": 10,
+        "continue": True,
+        "ignoreerrors": True,
+        "progress_hooks": [progress_hook],
         "postprocessors": [
             {
-                "key": "FFmpegMerger",  # Merge video and audio
+                "key": "FFmpegMerger",  # Merges audio and video
             }
         ]
     }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])  # Start downloading the playlist
+            ydl.download([url])
+        
+        # After download, if the folder is named "NA", rename it.
+        target_folder = download_path  # default: files are in download_path if no playlist folder
+        na_folder = os.path.join(download_path, "NA")
+        if os.path.exists(na_folder):
+            new_folder = os.path.join(download_path, "Youtube Download")
+            os.rename(na_folder, new_folder)
+            target_folder = new_folder
+            st.write(f"Renamed folder 'NA' to 'Youtube Download'")
+        
+        # Gather all downloaded MP4 files from target_folder recursively
+        downloaded_files = []
+        for root, dirs, files in os.walk(target_folder):
+            for file in files:
+                if file.endswith(".mp4"):
+                    downloaded_files.append(os.path.join(root, file))
+        
+        if downloaded_files:
+            st.write("Download finished. Click below to download your files:")
+            for file_path in downloaded_files:
+                with open(file_path, "rb") as f:
+                    file_data = f.read()
+                st.download_button(
+                    label=f"Download {os.path.basename(file_path)}",
+                    data=file_data,
+                    file_name=os.path.basename(file_path),
+                    mime="video/mp4"
+                )
+        else:
+            st.write("No MP4 files found.")
     except Exception as e:
         st.error(f"An error occurred: {e}")
 
 # Streamlit UI
 def main():
-    # Streamlit setup
     st.title("📺 YouTube Video/Playlist Downloader For Students:🎓")
     st.info("NOTE: Works For Laptop/Pc Only")
 
-    # Input for YouTube playlist URL
     playlist_url = st.text_input("🔗Enter YouTube Playlist URL:")
-
-    # Resolution selection
     resolution = st.selectbox("🎥Select Resolution:", ["360", "480", "720", "1080"], index=3)
+    download_path = st.text_input("📂Enter download path:", value=os.getcwd())
 
-    # Path input for download location
-    download_path = st.text_input("📂Enter download path:",default_download_path)
+    # Initialize progress components
+    st.session_state.progress_bar = st.progress(0)
+    st.session_state.progress_text = st.empty()
+    st.session_state.speed_text = st.empty()
+    st.session_state.size_text = st.empty()
 
-    # Show the download progress in the form of a progress bar and text
-    st.session_state.progress_bar = st.progress(0)  # Initialize the progress bar
-    st.session_state.progress_text = st.empty()  # Initialize empty space for the text
-    st.session_state.speed_text = st.empty()  # Initialize empty space for the speed text
-    st.session_state.size_text = st.empty()  # Initialize empty space for the size text
-
-    # Button to trigger download
     if st.button("Download"):
         if playlist_url and download_path:
-            # Check if the provided path exists, if not create the directory
             if not os.path.exists(download_path):
                 os.makedirs(download_path)
-                st.write(f"Created The Directory: {download_path}")
-
-            st.write(f"Downloading Video/Playlist From: {playlist_url} at {resolution}p to {download_path}")
+                st.write(f"Created the directory: {download_path}")
+            st.write(f"Downloading Video/Playlist from: {playlist_url} at {resolution}p to {download_path}")
             download_playlist(playlist_url, resolution, download_path)
         else:
-            st.error("Please Enter A Valid Playlist URL And Download Path.")
+            st.error("Please enter a valid Playlist URL and Download Path.")
 
     st.sidebar.subheader("👨🏻‍💻Developed By👨🏻‍💻")
     st.sidebar.subheader("⚡JASHWANTH RAJ J.R")
     st.sidebar.subheader("📚EDUCATIONAL PURPOSE ONLY🖋️")
-    st.sidebar.subheader("⚠️Disclimer:")
-    st.sidebar.subheader("1.Copyright Compliance: This tool is provided for educational and personal use only. By using this tool, you agree to comply with all applicable copyright laws and guidelines. Downloading copyrighted content without permission from the content owner may violate copyright laws. Please ensure that you have the right to download and use the content you are accessing.")
-    st.sidebar.subheader("2.Responsibility: The developer of this tool (Jashwanth Raj J.R) is not responsible for any content downloaded, including any legal issues that may arise. Users of this tool are solely responsible for ensuring that their actions comply with the laws of their respective jurisdictions.")
-    st.sidebar.subheader("3.Content Ownership: This tool is intended to assist in downloading publicly available videos, such as content with open licenses or non-copyrighted material. The tool does not support or encourage downloading paid or protected content without the express permission of the content owner.")
-    st.sidebar.subheader("4.No Liability: The creator of this tool does not accept any liability for loss of data, damage to devices, or legal consequences caused by improper use of this tool. By using this tool, you agree to indemnify the developer from any damages or legal action resulting from its use.")
-    st.sidebar.subheader("5.Terms of Service: You are advised to review and comply with the terms of service of any platform you download content from (e.g., YouTube, Vimeo, etc.). This tool does not circumvent any platform’s terms or guidelines.")
+    st.sidebar.subheader("⚠️Disclaimer:")
+    st.sidebar.info(
+        "1. Copyright Compliance: Use for educational/personal use only.\n"
+        "2. Responsibility: The developer is not responsible for any content downloaded.\n"
+        "3. Content Ownership: Intended for publicly available videos.\n"
+        "4. No Liability: Use at your own risk.\n"
+        "5. Terms of Service: Comply with the terms of any platform you download from."
+    )
 
 if __name__ == "__main__":
     main()
