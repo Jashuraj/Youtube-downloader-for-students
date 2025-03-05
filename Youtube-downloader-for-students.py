@@ -61,7 +61,8 @@ def download_playlist(url, resolution, download_path):
             {
                 "key": "FFmpegMerger",  # Merges audio and video
             }
-        ]
+        ],
+        "ffmpeg_location": "./ffmpeg/bin"
     }
 
     try:
